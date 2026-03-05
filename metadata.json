@@ -1,0 +1,5 @@
+{
+  "name": "NutriScan Health Coach",
+  "description": "Scan food barcodes to get instant health scores, AI-powered nutritional analysis, and healthy recipe ideas.",
+  "requestFramePermissions": ["camera"]
+}
