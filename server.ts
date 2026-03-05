@@ -11,6 +11,28 @@ const db = new Database("nutriscan.db");
 
 // Initialize database
 db.exec(`
+  CREATE TABLE IF NOT EXISTS users (
+    id TEXT PRIMARY KEY,
+    email TEXT UNIQUE,
+    password TEXT,
+    first_name TEXT,
+    last_name TEXT,
+    phone TEXT,
+    province TEXT,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS purchases (
+    id TEXT PRIMARY KEY,
+    user_id TEXT,
+    product_id TEXT,
+    product_name TEXT,
+    brand TEXT,
+    category TEXT,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(user_id) REFERENCES users(id)
+  );
+
   CREATE TABLE IF NOT EXISTS history (
     id TEXT PRIMARY KEY,
     name TEXT,
@@ -48,6 +70,54 @@ async function startServer() {
   const PORT = 3000;
 
   app.use(express.json());
+
+  // Auth Routes
+  app.post("/api/auth/signup", (req, res) => {
+    const { email, password, firstName, lastName, phone, province } = req.body;
+    const id = Math.random().toString(36).substring(2, 15);
+    try {
+      const stmt = db.prepare(`
+        INSERT INTO users (id, email, password, first_name, last_name, phone, province)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `);
+      stmt.run(id, email, password, firstName, lastName, phone, province);
+      const user = db.prepare("SELECT id, email, first_name, last_name, province FROM users WHERE id = ?").get(id);
+      res.json({ success: true, user });
+    } catch (error) {
+      res.status(400).json({ error: "Email already exists" });
+    }
+  });
+
+  app.post("/api/auth/login", (req, res) => {
+    const { email, password } = req.body;
+    const user = db.prepare("SELECT id, email, first_name, last_name, province FROM users WHERE email = ? AND password = ?").get(email, password);
+    if (user) {
+      res.json({ success: true, user });
+    } else {
+      res.status(401).json({ error: "Invalid credentials" });
+    }
+  });
+
+  // Purchase Patterns Routes
+  app.get("/api/purchases/:userId", (req, res) => {
+    const purchases = db.prepare(`
+      SELECT * FROM purchases 
+      WHERE user_id = ? 
+      ORDER BY timestamp DESC
+    `).all(req.params.userId);
+    res.json(purchases);
+  });
+
+  app.post("/api/purchases", (req, res) => {
+    const { userId, productId, productName, brand, category } = req.body;
+    const id = Math.random().toString(36).substring(2, 15);
+    const stmt = db.prepare(`
+      INSERT INTO purchases (id, user_id, product_id, product_name, brand, category)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+    stmt.run(id, userId, productId, productName, brand, category);
+    res.json({ success: true });
+  });
 
   // API Routes
   app.get("/api/history", (req, res) => {

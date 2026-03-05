@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { BrowserRouter, Routes, Route, useNavigate, Link, useLocation } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, useNavigate, Link, useLocation, useParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Scan, 
@@ -20,6 +20,7 @@ import {
   ChevronUp
 } from 'lucide-react';
 import { BarcodeScanner } from './components/BarcodeScanner';
+import { Auth } from './components/Auth';
 import { fetchProductByBarcode, Product } from './services/foodService';
 import { analyzeProduct, AnalysisResult, Recipe } from './services/geminiService';
 import { usePreferences } from './hooks/usePreferences';
@@ -179,7 +180,7 @@ const Onboarding = ({ onComplete }: { onComplete: () => void }) => {
   );
 };
 
-const Home = () => {
+const Home = ({ user }: { user: any }) => {
   const navigate = useNavigate();
   const [history, setHistory] = useState<any[]>([]);
 
@@ -191,7 +192,7 @@ const Home = () => {
     <div className="space-y-10">
       <header className="flex justify-between items-center">
         <div>
-          <h2 className="text-stone-400 text-xs font-bold uppercase tracking-[0.2em] mb-1">Health Coach</h2>
+          <h2 className="text-stone-400 text-xs font-bold uppercase tracking-[0.2em] mb-1">Welcome, {user.first_name}</h2>
           <h1 className="text-3xl font-extrabold tracking-tight text-gradient">NutriScan</h1>
         </div>
         <motion.div 
@@ -400,7 +401,7 @@ const ScanScreen = () => {
   );
 };
 
-const ProductDetail = () => {
+const ProductDetail = ({ user }: { user: any }) => {
   const { id } = useParams<{ id: string }>();
   const location = useLocation();
   const navigate = useNavigate();
@@ -445,10 +446,23 @@ const ProductDetail = () => {
               summary: res.summary
             })
           });
+
+          // Record purchase pattern
+          fetch('/api/purchases', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              userId: user.id,
+              productId: product.id,
+              productName: product.name,
+              brand: product.brand,
+              category: res.label
+            })
+          });
         })
         .finally(() => setLoading(false));
     }
-  }, [product, analysis, preferences.diet]);
+  }, [product, analysis, preferences.diet, user.id]);
 
   if (!product || loading) {
     return (
@@ -868,12 +882,39 @@ const SavedScreen = () => {
   );
 };
 
-const SettingsScreen = () => {
+const SettingsScreen = ({ user, onLogout }: { user: any, onLogout: () => void }) => {
   const { preferences, updatePreferences } = usePreferences();
 
   return (
     <div className="space-y-10">
-      <h1 className="text-3xl font-extrabold tracking-tight text-gradient">Settings</h1>
+      <header className="flex justify-between items-center">
+        <h1 className="text-3xl font-extrabold tracking-tight text-gradient">Settings</h1>
+        <button 
+          onClick={onLogout}
+          className="px-4 py-2 bg-red-50 text-red-600 rounded-xl text-xs font-bold border border-red-100"
+        >
+          Logout
+        </button>
+      </header>
+
+      <section className="bg-white rounded-[40px] p-8 border border-stone-100 shadow-xl shadow-stone-200/50">
+        <div className="flex items-center gap-4 mb-6">
+          <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center text-emerald-600 text-2xl font-black">
+            {user.first_name[0]}{user.last_name[0]}
+          </div>
+          <div>
+            <h4 className="font-bold text-xl">{user.first_name} {user.last_name}</h4>
+            <p className="text-stone-400 text-xs font-medium">{user.email}</p>
+            <p className="text-emerald-600 text-[10px] font-bold uppercase tracking-wider mt-1">{user.province}</p>
+          </div>
+        </div>
+        <Link 
+          to="/purchases"
+          className="w-full py-4 bg-stone-50 rounded-2xl flex items-center justify-center gap-2 text-stone-900 text-sm font-bold border border-stone-100"
+        >
+          View Purchase Patterns
+        </Link>
+      </section>
 
       <section className="space-y-6">
         <h3 className="text-xs font-bold uppercase tracking-[0.2em] text-stone-400 px-2">Dietary Preferences</h3>
@@ -941,11 +982,58 @@ const SettingsScreen = () => {
   );
 };
 
+const PurchasePatterns = ({ user }: { user: any }) => {
+  const [purchases, setPurchases] = useState<any[]>([]);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    fetch(`/api/purchases/${user.id}`).then(res => res.json()).then(setPurchases);
+  }, [user.id]);
+
+  return (
+    <div className="space-y-8">
+      <header className="flex items-center gap-4">
+        <button onClick={() => navigate(-1)} className="w-10 h-10 glass rounded-xl flex items-center justify-center">
+          <ArrowLeft size={20} />
+        </button>
+        <h1 className="text-2xl font-extrabold tracking-tight text-gradient">Purchase Patterns</h1>
+      </header>
+
+      <div className="bg-white rounded-[40px] p-8 border border-stone-100 shadow-xl shadow-stone-200/50">
+        <h3 className="text-xs font-bold uppercase tracking-[0.2em] text-stone-400 mb-6">Recent Activity</h3>
+        <div className="space-y-6">
+          {purchases.map((p, i) => (
+            <div key={p.id} className="flex items-start gap-4">
+              <div className={cn(
+                "w-10 h-10 rounded-xl flex items-center justify-center shrink-0",
+                p.category === 'Healthy' ? 'bg-emerald-100 text-emerald-600' :
+                p.category === 'Moderate' ? 'bg-yellow-100 text-yellow-600' : 'bg-red-100 text-red-600'
+              )}>
+                <CheckCircle2 size={20} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h4 className="font-bold text-sm truncate">{p.product_name}</h4>
+                <p className="text-[10px] text-stone-400 font-bold uppercase tracking-wider">{p.brand}</p>
+                <p className="text-[10px] text-stone-300 mt-1">{format(new Date(p.timestamp), 'MMM d, yyyy')}</p>
+              </div>
+            </div>
+          ))}
+          {purchases.length === 0 && (
+            <p className="text-center text-stone-400 py-10">No purchase patterns recorded yet.</p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // --- Main App ---
 
-import { useParams } from 'react-router-dom';
-
 export default function App() {
+  const [user, setUser] = useState<any>(() => {
+    const saved = localStorage.getItem('user');
+    return saved ? JSON.parse(saved) : null;
+  });
   const [showOnboarding, setShowOnboarding] = useState(!localStorage.getItem('onboarded'));
 
   useEffect(() => {
@@ -954,18 +1042,26 @@ export default function App() {
     }
   }, [showOnboarding]);
 
+  if (!user) {
+    return <Auth onAuthSuccess={setUser} />;
+  }
+
   return (
     <BrowserRouter>
       {showOnboarding && <Onboarding onComplete={() => setShowOnboarding(false)} />}
       <Layout>
         <Routes>
-          <Route path="/" element={<Home />} />
+          <Route path="/" element={<Home user={user} />} />
           <Route path="/scan" element={<ScanScreen />} />
-          <Route path="/product/:id" element={<ProductDetail />} />
+          <Route path="/product/:id" element={<ProductDetail user={user} />} />
           <Route path="/recipe/:id" element={<RecipeDetail />} />
           <Route path="/history" element={<HistoryScreen />} />
           <Route path="/saved" element={<SavedScreen />} />
-          <Route path="/settings" element={<SettingsScreen />} />
+          <Route path="/settings" element={<SettingsScreen user={user} onLogout={() => {
+            localStorage.removeItem('user');
+            setUser(null);
+          }} />} />
+          <Route path="/purchases" element={<PurchasePatterns user={user} />} />
         </Routes>
       </Layout>
     </BrowserRouter>
